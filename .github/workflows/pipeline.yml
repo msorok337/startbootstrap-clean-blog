@@ -3,7 +3,7 @@ name: Deploy with Docker Hub
 on: [push]
 
 env:
-  DOCKER_REPO: msoroko337/my-website1  # Замените на ваш репозиторий
+  DOCKER_REPO: msorok337/my-website-new  # Замените на ваш репозиторий
   TAG: latest
 
 jobs:
