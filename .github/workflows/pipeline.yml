@@ -29,10 +29,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build Docker Image
-        run: docker build -t ${{ env.YC_REGISTRY }}/my-website:latest .
+        run: docker build -t ${{ env.YC_REGISTRY }}/clean-site-registry:latest .
 
       - name: Push to Yandex Container Registry
-        run: docker push ${{ env.YC_REGISTRY }}/my-website:latest
+        run: docker push ${{ env.YC_REGISTRY }}/clean-site-registry:latest
 
   deploy:
     needs: build-and-push
