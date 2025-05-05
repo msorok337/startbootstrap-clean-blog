@@ -2,22 +2,37 @@ name: Deploy to Yandex Cloud
 
 on: [push]
 
+env:
+  YC_REGISTRY: cr.yandex/${{ secrets.YC_REGISTRY_ID }}
+
 jobs:
+  authenticate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Create auth config
+        run: |
+          mkdir -p ~/.docker
+          echo '{
+            "auths": {
+              "cr.yandex": {
+                "auth": "$(echo -n "json_key:${{ secrets.YC_DOCKER_JSON_KEY }}" | base64 -w 0)"
+              }
+            }
+          }' > ~/.docker/config.json
+
   build-and-push:
+    needs: authenticate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Login to Yandex Container Registry
-        run: |
-          echo '${{ secrets.YC_DOCKER_JSON_KEY }}' > key.json
-          cat key.json | docker login --username json_key --password-stdin cr.yandex
-          rm key.json
+      - name: Build Docker Image
+        run: docker build -t ${{ env.YC_REGISTRY }}/my-website:latest .
 
-      - name: Build and Push Docker Image
-        run: |
-          docker build -t cr.yandex/${{ secrets.YC_REGISTRY_ID }}/my-website:latest .
-          docker push cr.yandex/${{ secrets.YC_REGISTRY_ID }}/my-website:latest
+      - name: Push to Yandex Container Registry
+        run: docker push ${{ env.YC_REGISTRY }}/my-website:latest
 
   deploy:
     needs: build-and-push
@@ -30,10 +45,15 @@ jobs:
           username: ${{ secrets.YC_VM_USER }}
           key: ${{ secrets.YC_VM_SSH_KEY }}
           script: |
-            echo '${{ secrets.YC_DOCKER_JSON_KEY }}' > key.json
-            cat key.json | docker login --username json_key --password-stdin cr.yandex
-            rm key.json
-            docker pull cr.yandex/${{ secrets.YC_REGISTRY_ID }}/my-website:latest
+            mkdir -p ~/.docker
+            echo '{
+              "auths": {
+                "cr.yandex": {
+                  "auth": "$(echo -n "json_key:${{ secrets.YC_DOCKER_JSON_KEY }}" | base64 -w 0)"
+                }
+              }
+            }' > ~/.docker/config.json
+            docker pull ${{ env.YC_REGISTRY }}/my-website:latest
             docker stop my-website || true
             docker rm my-website || true
-            docker run -d --name my-website -p 80:80 cr.yandex/${{ secrets.YC_REGISTRY_ID }}/my-website:latest
+            docker run -d --name my-website -p 80:80 ${{ env.YC_REGISTRY }}/my-website:latest
