@@ -22,7 +22,7 @@ jobs:
             }
           }' > ~/.docker/config.json
 
-    build-and-push:
+  build-and-push:
     needs: authenticate
     runs-on: ubuntu-latest
     steps:
