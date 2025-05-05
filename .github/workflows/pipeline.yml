@@ -53,17 +53,17 @@ jobs:
   
       - name: Test SSH Connection
         run: |
-          echo "Тестируем подключение к invoicer-test@158.160.49.248..."
+          echo "Тестируем подключение к deployer@158.160.49.248..."
           ssh -vvv -i ~/.ssh/vm_key \
             -o ConnectTimeout=15 \
             -o IdentitiesOnly=yes \
-            invoicer-test@158.160.49.248 \
+            deployer@158.160.49.248 \
             "echo 'Успех! Пользователь: \$(whoami)'; exit 0" || {
             echo "::error::Не удалось подключиться"
             echo "Проверьте:"
-            echo "1. Публичный ключ в ~invoicer-test/.ssh/authorized_keys"
+            echo "1. Публичный ключ в ~deployer/.ssh/authorized_keys"
             echo "2. Доступность порта 158.160.49.248:22"
-            echo "3. Существование пользователя: sudo getent passwd invoicer-test"
+            echo "3. Существование пользователя: sudo getent passwd deployer"
             exit 1
           }
   
@@ -72,7 +72,7 @@ jobs:
           echo "Начинаем деплой на 158.160.49.248..."
           ssh -i ~/.ssh/vm_key \
             -o ConnectTimeout=15 \
-            invoicer-test@158.160.49.248 << 'DEPLOY_SCRIPT'
+            deployer@158.160.49.248 << 'DEPLOY_SCRIPT'
           #!/bin/bash
           set -exo pipefail
   
