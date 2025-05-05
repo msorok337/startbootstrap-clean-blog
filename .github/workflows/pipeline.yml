@@ -29,42 +29,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build Docker Image
-        run: |
-          # Формируем полное имя образа
-          IMAGE_NAME="${{ env.YC_REGISTRY }}/my-website:latest"
-          echo "Building image: $IMAGE_NAME"
-          docker build -t $IMAGE_NAME .
-          
-          # Проверяем что образ создан
-          if ! docker image inspect $IMAGE_NAME >/dev/null 2>&1; then
-            echo "ERROR: Docker image build failed"
-            exit 1
-          fi
+        run: docker build -t ${{ env.YC_REGISTRY }}/my-website:latest .
 
       - name: Push to Yandex Container Registry
-        run: |
-          IMAGE_NAME="${{ env.YC_REGISTRY }}/my-website:latest"
-          
-          # Проверяем аутентификацию
-          if ! docker info >/dev/null 2>&1; then
-            echo "ERROR: Not authenticated to Docker registry"
-            exit 1
-          fi
-          
-          # Пробуем сделать push с таймаутом
-          echo "Pushing image to Yandex Container Registry..."
-          if ! timeout 300 docker push $IMAGE_NAME; then
-            echo "ERROR: Push failed or timed out after 5 minutes"
-            
-            # Дополнительная диагностика
-            echo "Debug info:"
-            docker info
-            cat ~/.docker/config.json | jq '.auths."cr.yandex".auth' | xargs echo | base64 -d
-            
-            exit 1
-          fi
-          
-          echo "Successfully pushed $IMAGE_NAME"
+        run: docker push ${{ env.YC_REGISTRY }}/my-website:latest
 
   deploy:
     needs: build-and-push
