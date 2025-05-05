@@ -29,20 +29,38 @@ jobs:
           echo "Successfully pushed to Docker Hub:"
           echo "Image: ${{ env.DOCKER_REPO }}:${{ env.TAG }}"
 
-  deploy:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy to VM
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VM_IP }}
-          username: ${{ secrets.VM_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          script: |
-            docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_PASSWORD }}
-            docker pull ${{ env.IMAGE_NAME }}
-            docker stop running-app || true
-            docker rm running-app || true
-            docker run -d --name running-app -p 80:80 ${{ env.IMAGE_NAME }}
-            echo "Application deployed successfully"
+ deploy:
+  needs: build-and-push
+  runs-on: ubuntu-latest
+  steps:
+    - name: Configure SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/vm_key
+        chmod 600 ~/.ssh/vm_key
+        echo "StrictHostKeyChecking no" >> ~/.ssh/config
+
+    - name: Deploy to VM
+      run: |
+        ssh -i ~/.ssh/vm_key \
+          -o ConnectTimeout=15 \
+          ${{ secrets.VM_USER }}@${{ secrets.VM_IP }} << 'EOF'
+        # Docker Hub auth
+        echo "${{ secrets.DOCKER_HUB_PASSWORD }}" | \
+          docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
+        
+        # Cleanup old container
+        docker stop running-app || true
+        docker rm running-app || true
+        
+        # Pull and run new version
+        docker pull ${{ env.DOCKER_REPO }}:${{ env.TAG }}
+        docker run -d \
+          --name running-app \
+          -p 80:80 \
+          ${{ env.DOCKER_REPO }}:${{ env.TAG }}
+        
+        # Verify
+        sleep 5
+        curl -s http://localhost && echo "Deployment successful!" || echo "Warning: Container not responding"
+        EOF
