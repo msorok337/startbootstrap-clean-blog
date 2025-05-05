@@ -33,52 +33,63 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      # 1. Настройка SSH-ключа
-      - name: Setup SSH Key
+      # 1. Настройка SSH подключения
+      - name: Configure SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/vm_key
           chmod 600 ~/.ssh/vm_key
           echo "StrictHostKeyChecking no" >> ~/.ssh/config
+          echo "UserKnownHostsFile /dev/null" >> ~/.ssh/config
   
-      # 2. Проверка подключения (отдельный шаг для диагностики)
-      - name: Test SSH Connection
+      # 2. Проверка подключения (отдельный шаг)
+      - name: Test SSH Access as invoicer-test
         run: |
-          echo "Пытаюсь подключиться к серверу..."
-          if ! ssh -i ~/.ssh/vm_key \
-            -o ConnectTimeout=10 \
-            -o LogLevel=ERROR \
-            ${{ secrets.VM_USER }}@${{ secrets.VM_IP }} "echo 'SSH подключение успешно!'"; then
-            echo "::error::SSH подключение не удалось"
+          echo "Проверяем подключение к invoicer-test@${{ secrets.VM_IP }}..."
+          ssh -i ~/.ssh/vm_key \
+            -o ConnectTimeout=15 \
+            -o LogLevel=DEBUG \
+            invoicer-test@${{ secrets.VM_IP }} << 'EOF'
+          echo "Успешное подключение!"
+          whoami
+          pwd
+          EOF
+          if [ $? -ne 0 ]; then
+            echo "::error::Не удалось подключиться к invoicer-test"
+            echo "Проверьте:"
+            echo "1. Ключ в ~/.ssh/authorized_keys на сервере"
+            echo "2. Права: chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
+            echo "3. Пользователь invoicer-test существует"
             exit 1
           fi
   
-      # 3. Основной деплой
+      # 3. Деплой приложения
       - name: Deploy Application
         run: |
-          echo "Запускаем деплой..."
           ssh -i ~/.ssh/vm_key \
-            ${{ secrets.VM_USER }}@${{ secrets.VM_IP }} << 'DEPLOY'
-            # Docker Hub auth
-            echo "${{ secrets.DOCKER_HUB_PASSWORD }}" | \
-              docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
+            invoicer-test@${{ secrets.VM_IP }} << 'DEPLOY'
+          # Docker аутентификация
+          echo "${{ secrets.DOCKER_HUB_PASSWORD }}" | \
+            docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
   
-            # Остановка и удаление старого контейнера
-            docker stop running-app || true
-            docker rm running-app || true
+          # Остановка старого контейнера
+          docker stop invoicer-app || true
+          docker rm invoicer-app || true
   
-            # Запуск нового контейнера
-            docker pull ${{ env.DOCKER_REPO }}:${{ env.TAG }}
-            docker run -d \
-              --name running-app \
-              -p 80:80 \
-              ${{ env.DOCKER_REPO }}:${{ env.TAG }}
+          # Запуск нового контейнера
+          docker pull ${{ env.DOCKER_REPO }}:${{ env.TAG }}
+          docker run -d \
+            --name invoicer-app \
+            -p 80:80 \
+            -e APP_ENV=production \
+            ${{ env.DOCKER_REPO }}:${{ env.TAG }}
   
-            # Проверка работоспособности
-            sleep 5
-            if ! curl -s http://localhost >/dev/null; then
-              echo "::error::Контейнер не отвечает на порту 80"
-              exit 1
-            fi
-            echo "Деплой успешно завершен!"
+          # Проверка
+          sleep 5
+          curl -fs http://localhost || {
+            echo "::error::Контейнер не отвечает"
+            docker logs invoicer-app
+            exit 1
+          }
+          echo "Приложение успешно запущено!"
           DEPLOY
