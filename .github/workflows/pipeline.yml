@@ -33,16 +33,52 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-    - name: Deploy to VM
-      uses: appleboy/ssh-action@v1
-      with:
-        host: ${{ secrets.VM_IP }}
-        username: ${{ secrets.VM_USER }}
-        key: ${{ secrets.VM_SSH_KEY }}
-        script: |
-          echo '${{ secrets.DOCKER_HUB_PASSWORD }}' | docker login -u '${{ secrets.DOCKER_HUB_USERNAME }}' --password-stdin
-          docker stop running-app || true
-          docker rm running-app || true
-          docker pull ${{ env.DOCKER_REPO }}:${{ env.TAG }}
-          docker run -d --name running-app -p 80:80 ${{ env.DOCKER_REPO }}:${{ env.TAG }}
-          curl -fs http://localhost || echo "Container started but health check failed"
+      # 1. Настройка SSH-ключа
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/vm_key
+          chmod 600 ~/.ssh/vm_key
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+  
+      # 2. Проверка подключения (отдельный шаг для диагностики)
+      - name: Test SSH Connection
+        run: |
+          echo "Пытаюсь подключиться к серверу..."
+          if ! ssh -i ~/.ssh/vm_key \
+            -o ConnectTimeout=10 \
+            -o LogLevel=ERROR \
+            ${{ secrets.VM_USER }}@${{ secrets.VM_IP }} "echo 'SSH подключение успешно!'"; then
+            echo "::error::SSH подключение не удалось"
+            exit 1
+          fi
+  
+      # 3. Основной деплой
+      - name: Deploy Application
+        run: |
+          echo "Запускаем деплой..."
+          ssh -i ~/.ssh/vm_key \
+            ${{ secrets.VM_USER }}@${{ secrets.VM_IP }} << 'DEPLOY'
+            # Docker Hub auth
+            echo "${{ secrets.DOCKER_HUB_PASSWORD }}" | \
+              docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
+  
+            # Остановка и удаление старого контейнера
+            docker stop running-app || true
+            docker rm running-app || true
+  
+            # Запуск нового контейнера
+            docker pull ${{ env.DOCKER_REPO }}:${{ env.TAG }}
+            docker run -d \
+              --name running-app \
+              -p 80:80 \
+              ${{ env.DOCKER_REPO }}:${{ env.TAG }}
+  
+            # Проверка работоспособности
+            sleep 5
+            if ! curl -s http://localhost >/dev/null; then
+              echo "::error::Контейнер не отвечает на порту 80"
+              exit 1
+            fi
+            echo "Деплой успешно завершен!"
+          DEPLOY
