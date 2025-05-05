@@ -3,7 +3,7 @@ name: Deploy with Docker Hub
 on: [push]
 
 env:
-  DOCKER_REPO: your-dockerhub-username/my-website  # Замените на ваш логин и репозиторий
+  DOCKER_REPO: msoroko337/my-website  # Замените на ваш логин и репозиторий
   TAG: latest
 
 jobs:
