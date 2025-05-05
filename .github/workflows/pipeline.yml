@@ -3,44 +3,89 @@ name: Deploy to Yandex Cloud
 on: [push]
 
 env:
-  REGISTRY_HOST: cr.yandex
-  REPO_NAME: website-app  # Можно менять без изменения остального кода
-  TAG: latest             # Или использовать ${{ github.sha }} для уникальных тегов
+  REGISTRY: cr.yandex
+  REPO_NAME: my-web-app
+  TAG: latest
 
 jobs:
-  auth-and-build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure Docker auth
+      # Шаг 1: Подготовка аутентификации
+      - name: Configure YC Docker auth
         run: |
-          mkdir -p ~/.docker
-          AUTH=$(echo -n "json_key:${{ secrets.YC_DOCKER_JSON_KEY }}" | base64 -w 0)
-          echo "{\"auths\":{\"${{ env.REGISTRY_HOST }}\":{\"auth\":\"$AUTH\"}}}" > ~/.docker/config.json
+          # Создаем временный файл с JSON ключом
+          echo '${{ secrets.YC_DOCKER_JSON_KEY }}' > /tmp/sa-key.json
+          
+          # Аутентифицируемся в Yandex Container Registry
+          cat /tmp/sa-key.json | docker login \
+            --username json_key \
+            --password-stdin \
+            ${{ env.REGISTRY }}
+          
+          # Проверяем успешность аутентификации
+          if ! docker info >/dev/null 2>&1; then
+            echo "ERROR: Docker authentication failed"
+            exit 1
+          fi
+          
+          rm /tmp/sa-key.json
 
-      - name: Build Docker image
+      # Шаг 2: Сборка и публикация образа
+      - name: Build and push Docker image
         run: |
-          FULL_IMAGE_NAME="${{ env.REGISTRY_HOST }}/${{ secrets.YC_REGISTRY_ID }}/${{ env.REPO_NAME }}:${{ env.TAG }}"
-          docker build -t $FULL_IMAGE_NAME .
-          docker push $FULL_IMAGE_NAME
-          echo "FULL_IMAGE_NAME=$FULL_IMAGE_NAME" >> $GITHUB_ENV
+          # Формируем полное имя образа
+          IMAGE_NAME="${{ env.REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/${{ env.REPO_NAME }}:${{ env.TAG }}"
+          
+          # Собираем образ
+          docker build -t $IMAGE_NAME .
+          
+          # Тегируем и публикуем
+          docker push $IMAGE_NAME
+          
+          # Проверяем успешность публикации
+          if [ $? -ne 0 ]; then
+            echo "ERROR: Failed to push image to Yandex Container Registry"
+            exit 1
+          fi
+          
+          # Сохраняем имя образа для следующего шага
+          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
 
-  deploy:
-    needs: auth-and-build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy to VM
+      # Шаг 3: Деплой на виртуальную машину
+      - name: Deploy to Yandex Cloud VM
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.YC_VM_IP }}
           username: ${{ secrets.YC_VM_USER }}
           key: ${{ secrets.YC_VM_SSH_KEY }}
           script: |
-            mkdir -p ~/.docker
-            AUTH=$(echo -n "json_key:${{ secrets.YC_DOCKER_JSON_KEY }}" | base64 -w 0)
-            echo "{\"auths\":{\"${{ env.REGISTRY_HOST }}\":{\"auth\":\"$AUTH\"}}}" > ~/.docker/config.json
-            docker pull ${{ env.FULL_IMAGE_NAME }}
-            docker stop running-app || true
-            docker rm running-app || true
-            docker run -d --name running-app -p 80:80 ${{ env.FULL_IMAGE_NAME }}
+            # Аутентифицируемся на ВМ
+            echo '${{ secrets.YC_DOCKER_JSON_KEY }}' > /tmp/sa-key.json
+            cat /tmp/sa-key.json | docker login \
+              --username json_key \
+              --password-stdin \
+              ${{ env.REGISTRY }}
+            rm /tmp/sa-key.json
+            
+            # Получаем образ
+            docker pull ${{ env.IMAGE_NAME }}
+            
+            # Останавливаем старый контейнер
+            docker stop web-container || true
+            docker rm web-container || true
+            
+            # Запускаем новый контейнер
+            docker run -d \
+              --name web-container \
+              -p 80:80 \
+              ${{ env.IMAGE_NAME }}
+            
+            # Проверяем работоспособность
+            sleep 5
+            if ! curl -s http://localhost >/dev/null; then
+              echo "ERROR: Container failed to start"
+              exit 1
+            fi
