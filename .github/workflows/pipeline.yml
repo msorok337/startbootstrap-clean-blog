@@ -28,8 +28,7 @@ jobs:
         run: |
           echo "Successfully pushed to Docker Hub:"
           echo "Image: ${{ env.DOCKER_REPO }}:${{ env.TAG }}"
-
- deploy:
+  deploy:
   needs: build-and-push
   runs-on: ubuntu-latest
   steps:
