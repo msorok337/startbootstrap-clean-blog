@@ -57,3 +57,5 @@ jobs:
             docker stop my-website || true
             docker rm my-website || true
             docker run -d --name my-website -p 80:80 ${{ env.YC_REGISTRY }}/my-website:latest
+
+            
