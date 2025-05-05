@@ -13,57 +13,56 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Добавляем диагностику перед аутентификацией
-      - name: Verify registry access (Diagnostics)
+      - name: Setup Docker auth
         run: |
-          echo "=== DIAGNOSTIC INFORMATION ==="
-          echo "Registry: ${{ env.REGISTRY }}"
-          echo "Repository ID: ${{ secrets.YC_REGISTRY_ID }}"
-          echo "Full image path: ${{ env.REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/${{ env.REPO_NAME }}:${{ env.TAG }}"
-          echo "=============================="
+          # Создаем директорию для конфига Docker
+          mkdir -p ~/.docker
+          
+          # Формируем base64 токен
+          AUTH_TOKEN=$(echo -n "json_key:${{ secrets.YC_DOCKER_JSON_KEY }}" | base64 | tr -d '\n')
+          
+          # Создаем конфиг
+          echo "{
+            \"auths\": {
+              \"cr.yandex\": {
+                \"auth\": \"$AUTH_TOKEN\"
+              }
+            }
+          }" > ~/.docker/config.json
 
-      - name: Authenticate with Yandex Container Registry
+      - name: Debug auth config
         run: |
-          # Создаем временный файл с JSON ключом
-          echo '${{ secrets.YC_DOCKER_JSON_KEY }}' > /tmp/sa-key.json
-          
-          # Аутентифицируемся
-          cat /tmp/sa-key.json | docker login \
-            --username json_key \
-            --password-stdin \
-            ${{ env.REGISTRY }}
-          
-          # Проверяем успешность аутентификации
+          echo "=== AUTH DEBUG INFORMATION ==="
+          echo "Docker config file content:"
+          cat ~/.docker/config.json
+          echo "Decoded auth token:"
+          echo $(cat ~/.docker/config.json | jq -r '.auths."cr.yandex".auth' | base64 -d)
+          echo "============================"
+
+      - name: Verify authentication
+        run: |
           if ! docker info >/dev/null 2>&1; then
             echo "ERROR: Docker authentication failed"
             exit 1
           fi
-          
-          rm /tmp/sa-key.json
+          echo "Successfully authenticated with Yandex Container Registry"
 
-      - name: Build and push Docker image
+      - name: Build Docker image
         run: |
-          # Формируем полное имя образа
           IMAGE_NAME="${{ env.REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/${{ env.REPO_NAME }}:${{ env.TAG }}"
-          
-          # Собираем образ
+          echo "Building image: $IMAGE_NAME"
           docker build -t $IMAGE_NAME .
-          
-          # Публикуем образ
-          echo "Pushing image to Yandex Container Registry..."
+
+      - name: Push Docker image
+        run: |
+          IMAGE_NAME="${{ env.REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/${{ env.REPO_NAME }}:${{ env.TAG }}"
+          echo "Pushing image: $IMAGE_NAME"
           if ! docker push $IMAGE_NAME; then
             echo "ERROR: Failed to push image"
-            
-            # Дополнительная диагностика
-            echo "=== PUSH FAILURE DIAGNOSTICS ==="
-            echo "Registry URL: ${{ env.REGISTRY }}"
-            echo "Repository ID: ${{ secrets.YC_REGISTRY_ID }}"
-            echo "Full image name: $IMAGE_NAME"
-            echo "================================"
-            
+            echo "Trying to get more info..."
+            docker info
             exit 1
           fi
-          
           echo "Successfully pushed $IMAGE_NAME"
           echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
 
@@ -78,30 +77,33 @@ jobs:
           username: ${{ secrets.YC_VM_USER }}
           key: ${{ secrets.YC_VM_SSH_KEY }}
           script: |
-            # Аутентифицируемся на ВМ
-            echo '${{ secrets.YC_DOCKER_JSON_KEY }}' > /tmp/sa-key.json
-            cat /tmp/sa-key.json | docker login \
-              --username json_key \
-              --password-stdin \
-              ${{ env.REGISTRY }}
-            rm /tmp/sa-key.json
+            # Настройка аутентификации
+            mkdir -p ~/.docker
+            AUTH_TOKEN=$(echo -n "json_key:${{ secrets.YC_DOCKER_JSON_KEY }}" | base64 | tr -d '\n')
+            echo "{
+              \"auths\": {
+                \"cr.yandex\": {
+                  \"auth\": \"$AUTH_TOKEN\"
+                }
+              }
+            }" > ~/.docker/config.json
             
-            # Получаем образ
-            docker pull ${{ env.IMAGE_NAME }}
+            # Получение и запуск контейнера
+            IMAGE_NAME="${{ env.REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/${{ env.REPO_NAME }}:${{ env.TAG }}"
+            echo "Pulling image: $IMAGE_NAME"
+            docker pull $IMAGE_NAME
             
-            # Останавливаем старый контейнер
+            echo "Stopping old container"
             docker stop web-container || true
             docker rm web-container || true
             
-            # Запускаем новый контейнер
-            docker run -d \
-              --name web-container \
-              -p 80:80 \
-              ${{ env.IMAGE_NAME }}
+            echo "Starting new container"
+            docker run -d --name web-container -p 80:80 $IMAGE_NAME
             
-            # Проверяем работоспособность
+            echo "Verifying container"
             sleep 5
             if ! curl -s http://localhost >/dev/null; then
               echo "ERROR: Container failed to start"
               exit 1
             fi
+            echo "Container is running successfully"
