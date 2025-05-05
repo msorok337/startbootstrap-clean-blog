@@ -3,7 +3,7 @@ name: Deploy with Docker Hub
 on: [push]
 
 env:
-  DOCKER_REPO: msoroko337/my-website  # Замените на ваш логин и репозиторий
+  DOCKER_REPO: msoroko337/my-website1  # Замените на ваш репозиторий
   TAG: latest
 
 jobs:
@@ -24,6 +24,11 @@ jobs:
           docker push ${{ env.DOCKER_REPO }}:${{ env.TAG }}
           echo "IMAGE_NAME=${{ env.DOCKER_REPO }}:${{ env.TAG }}" >> $GITHUB_ENV
 
+      - name: Verify push
+        run: |
+          echo "Successfully pushed to Docker Hub:"
+          echo "Image: ${{ env.DOCKER_REPO }}:${{ env.TAG }}"
+
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
@@ -35,21 +40,9 @@ jobs:
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           script: |
-            # Docker Hub authentication
-            echo ${{ secrets.DOCKER_HUB_PASSWORD }} | docker login \
-              -u ${{ secrets.DOCKER_HUB_USERNAME }} \
-              --password-stdin
-            
-            # Pull and run container
+            docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_PASSWORD }}
             docker pull ${{ env.IMAGE_NAME }}
             docker stop running-app || true
             docker rm running-app || true
-            docker run -d \
-              --name running-app \
-              -p 80:80 \
-              ${{ env.IMAGE_NAME }}
-            
-            # Verify deployment
-            sleep 5
-            curl -s http://localhost || echo "Warning: Container might not be responding"
+            docker run -d --name running-app -p 80:80 ${{ env.IMAGE_NAME }}
             echo "Application deployed successfully"
