@@ -1,0 +1,41 @@
+name: Deploy to Yandex Cloud
+
+on: [push]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Yandex Container Registry
+        run: |
+          echo "${{ secrets.YC_DOCKER_SECRET }}" | docker login \
+            --username iam-service-account \
+            --password-stdin \
+            cr.yandex
+
+      - name: Build and Push
+        run: |
+          docker build -t cr.yandex/${{ secrets.YC_REGISTRY_ID }}/my-website:latest .
+          docker push cr.yandex/${{ secrets.YC_REGISTRY_ID }}/my-website:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VM
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.YC_VM_IP }}
+          username: ${{ secrets.YC_VM_USER }}
+          key: ${{ secrets.YC_VM_SSH_KEY }}
+          script: |
+            echo "${{ secrets.YC_DOCKER_SECRET }}" | docker login \
+              --username iam-service-account \
+              --password-stdin \
+              cr.yandex
+            docker pull cr.yandex/${{ secrets.YC_REGISTRY_ID }}/my-website:latest
+            docker stop my-website || true
+            docker rm my-website || true
+            docker run -d --name my-website -p 80:80 cr.yandex/${{ secrets.YC_REGISTRY_ID }}/my-website:latest
