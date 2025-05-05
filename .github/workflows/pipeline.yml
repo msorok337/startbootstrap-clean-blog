@@ -10,12 +10,11 @@ jobs:
 
       - name: Login to Yandex Container Registry
         run: |
-          echo "${{ secrets.YC_DOCKER_SECRET }}" | docker login \
-            --username json_key \
-            --password-stdin \
-            cr.yandex
+          echo '${{ secrets.YC_DOCKER_JSON_KEY }}' > key.json
+          cat key.json | docker login --username json_key --password-stdin cr.yandex
+          rm key.json
 
-      - name: Build and Push
+      - name: Build and Push Docker Image
         run: |
           docker build -t cr.yandex/${{ secrets.YC_REGISTRY_ID }}/my-website:latest .
           docker push cr.yandex/${{ secrets.YC_REGISTRY_ID }}/my-website:latest
@@ -31,10 +30,9 @@ jobs:
           username: ${{ secrets.YC_VM_USER }}
           key: ${{ secrets.YC_VM_SSH_KEY }}
           script: |
-            echo "${{ secrets.YC_DOCKER_SECRET }}" | docker login \
-              --username iam-service-account \
-              --password-stdin \
-              cr.yandex
+            echo '${{ secrets.YC_DOCKER_JSON_KEY }}' > key.json
+            cat key.json | docker login --username json_key --password-stdin cr.yandex
+            rm key.json
             docker pull cr.yandex/${{ secrets.YC_REGISTRY_ID }}/my-website:latest
             docker stop my-website || true
             docker rm my-website || true
