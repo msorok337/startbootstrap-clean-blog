@@ -30,9 +30,9 @@ jobs:
           echo "Image: ${{ env.DOCKER_REPO }}:${{ env.TAG }}"
   
   deploy:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    steps:
+  needs: build-and-push
+  runs-on: ubuntu-latest
+  steps:
     - name: Configure SSH
       run: |
         mkdir -p ~/.ssh
@@ -44,23 +44,18 @@ jobs:
       run: |
         ssh -i ~/.ssh/vm_key \
           -o ConnectTimeout=15 \
-          ${{ secrets.VM_USER }}@${{ secrets.VM_IP }} << 'EOF'
-        # Docker Hub auth
-        echo "${{ secrets.DOCKER_HUB_PASSWORD }}" | \
-          docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
-        
-        # Cleanup old container
-        docker stop running-app || true
-        docker rm running-app || true
-        
-        # Pull and run new version
-        docker pull ${{ env.DOCKER_REPO }}:${{ env.TAG }}
-        docker run -d \
-          --name running-app \
-          -p 80:80 \
-          ${{ env.DOCKER_REPO }}:${{ env.TAG }}
-        
-        # Verify
-        sleep 5
-        curl -s http://localhost && echo "Deployment successful!" || echo "Warning: Container not responding"
-        EOF 
+          ${{ secrets.VM_USER }}@${{ secrets.VM_IP }} "
+          # Docker Hub auth
+          echo '${{ secrets.DOCKER_HUB_PASSWORD }}' | \
+            docker login -u '${{ secrets.DOCKER_HUB_USERNAME }}' --password-stdin
+          
+          # Cleanup and deploy
+          docker stop running-app || true
+          docker rm running-app || true
+          docker pull ${{ env.DOCKER_REPO }}:${{ env.TAG }}
+          docker run -d --name running-app -p 80:80 ${{ env.DOCKER_REPO }}:${{ env.TAG }}
+          
+          # Verification
+          sleep 5
+          curl -fs http://localhost && echo 'Deployment successful!' || echo 'Deployment check failed'
+        "
