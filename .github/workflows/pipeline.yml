@@ -46,7 +46,7 @@ jobs:
           sshpass -p "$SSH_PASSWORD" ssh \
             -o StrictHostKeyChecking=no \
             ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} \
-            "mkdir -p ${{ env.REMOTE_DIR }} && chmod 755 ${{ env.REMOTE_DIR }}"
+            "sudo mkdir -p ${{ env.REMOTE_DIR }} && chmod 755 ${{ env.REMOTE_DIR }}"
 
       - name: Upload Site Files
         env:
