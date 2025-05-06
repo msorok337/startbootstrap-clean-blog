@@ -30,6 +30,7 @@ jobs:
           echo "Image: ${{ env.DOCKER_REPO }}:${{ env.TAG }}"
   
   deploy:
+    needs: build-and-push
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
