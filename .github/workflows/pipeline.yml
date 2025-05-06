@@ -34,47 +34,45 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
+      
       - name: Install SSH tools
-        run: sudo apt-get install -y sshpass
+        run: sudo apt-get install -y sshpass rsync
 
-      - name: Deploy Application
+      - name: Upload Site Files
         env:
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
         run: |
-          # Проверка подключения
-          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} "echo 'SSH connection successful!'"
+          # Создаем папку на сервере
+          sshpass -p "$SSH_PASSWORD" ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} \
+            "mkdir -p ${{ env.SITE_DIR }}"
+          
+          # Копируем файлы
+          rsync -avz -e "sshpass -p $SSH_PASSWORD ssh -o StrictHostKeyChecking=no" \
+            ./ ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:${{ env.SITE_DIR }}/
 
-          # Основной деплой
+      - name: Deploy Container
+        env:
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+        run: |
           sshpass -p "$SSH_PASSWORD" ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << 'DEPLOY'
           #!/bin/bash
           set -e
 
-          echo "=== Starting deployment at $(date) ==="
-          echo "Running as user: $(whoami)"
-
-          # Docker authentication
-          echo "${{ secrets.DOCKER_HUB_PASSWORD }}" | \
-            docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
-
-          # Stop and remove old container
+          echo "=== Stopping old container ==="
           docker stop app-container || true
           docker rm app-container || true
 
-          # Pull and run new container
-          docker pull ${{ env.DOCKER_REPO }}:${{ env.TAG }}
+          echo "=== Starting new container ==="
           docker run -d \
             --name app-container \
             -p 80:80 \
-            --restart unless-stopped \
-            ${{ env.DOCKER_REPO }}:${{ env.TAG }}
+            -v ${{ env.SITE_DIR }}:/usr/share/nginx/html \
+            nginx:alpine
 
-          # Health check
-          sleep 5
-          if ! curl -s http://localhost >/dev/null; then
-            echo "::error::Container health check failed"
-            docker logs app-container
+          echo "=== Verifying ==="
+          sleep 3
+          curl -s http://localhost | grep -q "Welcome to nginx" && {
+            echo "::error::Still showing NGINX default page!"
             exit 1
-          fi
-          echo "=== Deployment successful ==="
+          }
           DEPLOY
