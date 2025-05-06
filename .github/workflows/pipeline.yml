@@ -34,27 +34,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install SSH tools
         run: sudo apt-get install -y sshpass rsync
+
+      - name: Prepare Server Directory
+        env:
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+        run: |
+          sshpass -p "$SSH_PASSWORD" ssh \
+            -o StrictHostKeyChecking=no \
+            ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} \
+            "mkdir -p ${{ env.REMOTE_DIR }} && chmod 755 ${{ env.REMOTE_DIR }}"
 
       - name: Upload Site Files
         env:
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
         run: |
-          # Создаем папку на сервере
-          sshpass -p "$SSH_PASSWORD" ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} \
-            "mkdir -p ${{ env.SITE_DIR }}"
-          
-          # Копируем файлы
-          rsync -avz -e "sshpass -p $SSH_PASSWORD ssh -o StrictHostKeyChecking=no" \
-            ./ ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:${{ env.SITE_DIR }}/
+          rsync -avz \
+            --progress \
+            -e "sshpass -p $SSH_PASSWORD ssh -o StrictHostKeyChecking=no" \
+            ./ \
+            ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:${{ env.REMOTE_DIR }}/
 
       - name: Deploy Container
         env:
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
         run: |
-          sshpass -p "$SSH_PASSWORD" ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << 'DEPLOY'
+          sshpass -p "$SSH_PASSWORD" ssh \
+            -o StrictHostKeyChecking=no \
+            ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << 'DEPLOY'
           #!/bin/bash
           set -e
 
@@ -66,13 +75,16 @@ jobs:
           docker run -d \
             --name app-container \
             -p 80:80 \
-            -v ${{ env.SITE_DIR }}:/usr/share/nginx/html \
+            -v $REMOTE_DIR:/usr/share/nginx/html \
             nginx:alpine
 
-          echo "=== Verifying ==="
+          echo "=== Verification ==="
           sleep 3
-          curl -s http://localhost | grep -q "Welcome to nginx" && {
-            echo "::error::Still showing NGINX default page!"
+          if curl -s http://localhost | grep -q "Welcome to nginx"; then
+            echo "::error::Still showing default NGINX page!"
+            echo "Files in container:"
+            docker exec app-container ls -la /usr/share/nginx/html
             exit 1
-          }
+          fi
+          echo "Deployment successful!"
           DEPLOY
