@@ -30,81 +30,50 @@ jobs:
           echo "Image: ${{ env.DOCKER_REPO }}:${{ env.TAG }}"
   
   deploy:
-    needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: Configure SSH
-        run: |
-          mkdir -p ~/.ssh
-          # Правильное сохранение ключа с переносами строк
-          cat <<EOF > ~/.ssh/vm_key
-          ${{ secrets.VM_SSH_KEY }}
-          EOF
-          chmod 600 ~/.ssh/vm_key
-          echo -e "Host 158.160.49.248\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null" > ~/.ssh/config
-  
-      - name: Verify SSH Key
-        run: |
-          echo "Проверяем SSH-ключ:"
-          head -n 3 ~/.ssh/vm_key
-          echo "..."
-          tail -n 3 ~/.ssh/vm_key
-          echo "Права на ключ: $(stat -c '%a' ~/.ssh/vm_key)"
-  
-      - name: Test SSH Connection
-        run: |
-          echo "Тестируем подключение к deployer@158.160.49.248..."
-          ssh -vvv -i ~/.ssh/vm_key \
-            -o ConnectTimeout=15 \
-            -o IdentitiesOnly=yes \
-            deployer@158.160.49.248 \
-            "echo 'Успех! Пользователь: \$(whoami)'; exit 0" || {
-            echo "::error::Не удалось подключиться"
-            echo "Проверьте:"
-            echo "1. Публичный ключ в ~deployer/.ssh/authorized_keys"
-            echo "2. Доступность порта 158.160.49.248:22"
-            echo "3. Существование пользователя: sudo getent passwd deployer"
-            exit 1
-          }
-  
+      - uses: actions/checkout@v4
+
+      - name: Install SSH tools
+        run: sudo apt-get install -y sshpass
+
       - name: Deploy Application
+        env:
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
         run: |
-          echo "Начинаем деплой на 158.160.49.248..."
-          ssh -i ~/.ssh/vm_key \
-            -o ConnectTimeout=15 \
-            deployer@158.160.49.248 << 'DEPLOY_SCRIPT'
+          # Проверка подключения
+          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} "echo 'SSH connection successful!'"
+
+          # Основной деплой
+          sshpass -p "$SSH_PASSWORD" ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << 'DEPLOY'
           #!/bin/bash
-          set -exo pipefail
-  
-          echo "=== Системная информация ==="
-          echo "Дата: $(date)"
-          echo "Пользователь: $(whoami)"
-          echo "Домашняя директория: $HOME"
-          echo "Docker info: $(docker info --format '{{.ServerVersion}}')"
-  
-          echo "=== Аутентификация в Docker Hub ==="
+          set -e
+
+          echo "=== Starting deployment at $(date) ==="
+          echo "Running as user: $(whoami)"
+
+          # Docker authentication
           echo "${{ secrets.DOCKER_HUB_PASSWORD }}" | \
             docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
-  
-          echo "=== Остановка старого контейнера ==="
-          docker stop invoicer-app || true
-          docker rm invoicer-app || true
-  
-          echo "=== Запуск нового контейнера ==="
+
+          # Stop and remove old container
+          docker stop app-container || true
+          docker rm app-container || true
+
+          # Pull and run new container
           docker pull ${{ env.DOCKER_REPO }}:${{ env.TAG }}
           docker run -d \
-            --name invoicer-app \
+            --name app-container \
             -p 80:80 \
-            -e NODE_ENV=production \
+            --restart unless-stopped \
             ${{ env.DOCKER_REPO }}:${{ env.TAG }}
-  
-          echo "=== Проверка работоспособности ==="
+
+          # Health check
           sleep 5
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost)
-          if [ "$HTTP_STATUS" -ne 200 ]; then
-            echo "::error::Контейнер вернул статус $HTTP_STATUS"
-            docker logs invoicer-app
+          if ! curl -s http://localhost >/dev/null; then
+            echo "::error::Container health check failed"
+            docker logs app-container
             exit 1
           fi
-          echo "Деплой успешно завершен!"
-          DEPLOY_SCRIPT
+          echo "=== Deployment successful ==="
+          DEPLOY
