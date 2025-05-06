@@ -44,15 +44,15 @@ jobs:
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
         run: |
           sshpass -p "$SSH_PASSWORD" ssh \
-            -o StrictHostKeyChecking=no \
-            ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} \
-            "echo '$SSH_PASSWORD' | sudo -S sh -c 'mkdir -p ${{ env.REMOTE_DIR }} && chmod 755 ${{ env.REMOTE_DIR }}'"
+          -o StrictHostKeyChecking=no \
+          ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} \
+          "rsync -avz --progress -e 'sshpass -p $SSH_PASSWORD ssh -o StrictHostKeyChecking=no' ./ ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:${{ env.REMOTE_DIR }}/ && echo '$SSH_PASSWORD' | sudo -S chown -R ${{ secrets.SSH_USER }}:${{ secrets.SSH_USER }} ${{ env.REMOTE_DIR }}"
 
       - name: Upload Site Files
         env:
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
         run: |
-          sudo rsync -avz \
+           rsync -avz \
             --progress \
             -e "sshpass -p $SSH_PASSWORD ssh -o StrictHostKeyChecking=no" \
             ./ \
