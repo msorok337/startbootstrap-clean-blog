@@ -5,6 +5,7 @@ on: [push]
 env:
   DOCKER_REPO: msorok337/my-website-new  # Замените на ваш репозиторий
   TAG: latest
+  REMOTE_DIR: /var/www/my-website
 
 jobs:
   build-and-push:
