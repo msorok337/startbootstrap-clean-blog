@@ -52,9 +52,8 @@ jobs:
         env:
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
         run: |
-           rsync -avz \
-            --progress \
-            -e "sshpass -p $SSH_PASSWORD ssh -o StrictHostKeyChecking=no" \
+            sshpass -p "$SSH_PASSWORD" rsync -avz --no-o --no-g --progress \
+            -e "ssh -o StrictHostKeyChecking=no" \
             ./ \
             ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:${{ env.REMOTE_DIR }}/
 
