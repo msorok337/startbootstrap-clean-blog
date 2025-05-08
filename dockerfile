@@ -1,8 +1,8 @@
 # Используем легковесный веб-сервер Nginx
-FROM nginx:alpine
+#FROM nginx:alpine
 
 # Копируем файлы сайта в папку Nginx
-COPY . /usr/share/nginx/html
+#COPY . /usr/share/nginx/html
 
 # Опционально: указываем порт (для документации)
-EXPOSE 80
+#EXPOSE 80
