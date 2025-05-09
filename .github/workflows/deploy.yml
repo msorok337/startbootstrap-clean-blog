@@ -27,7 +27,7 @@ jobs:
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SSH_USER }}
-          password: ${{ secrets.SSH_PASSWORD }}
+          key: ${{ secrets.SSH_KEY }}
           script: |
             docker pull ${{ secrets.DOCKER_HUB_USERNAME }}/startbootstrap-clean-blog:latest
             docker stop blog || true
