@@ -1,8 +1,13 @@
-# Используем легковесный веб-сервер Nginx
-#FROM nginx:alpine
+FROM nginx:alpine
 
-# Копируем файлы сайта в папку Nginx
-#COPY . /usr/share/nginx/html
+# Удалим дефолтный html
+RUN rm -rf /usr/share/nginx/html/*
 
-# Опционально: указываем порт (для документации)
-#EXPOSE 80
+# Копируем собранный сайт
+COPY dist/ /usr/share/nginx/html/
+
+# Обеспечим нужные права (не обязательно, но безопасно)
+RUN chown -R nginx:nginx /usr/share/nginx/html
+
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
