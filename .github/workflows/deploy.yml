@@ -3,7 +3,7 @@ name: Build and Deploy Docker Image
 on:
   push:
     branches:
-      - main  # или другая ветка, если основная не main
+      - master  # или другая ветка, если основная не main
 
 jobs:
   build-and-deploy:
