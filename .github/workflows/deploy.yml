@@ -1,0 +1,35 @@
+name: Build and Deploy Docker Image
+
+on:
+  push:
+    branches:
+      - main  # или другая ветка, если основная не main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Log in to Docker Hub
+        run: echo "${{ secrets.DOCKER_HUB_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
+
+      - name: Build Docker image
+        run: docker build -t ${{ secrets.DOCKER_HUB_USERNAME }}/startbootstrap-clean-blog:latest .
+
+      - name: Push image to Docker Hub
+        run: docker push ${{ secrets.DOCKER_HUB_USERNAME }}/startbootstrap-clean-blog:latest
+
+      - name: Deploy to server via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SSH_USER }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          script: |
+            docker pull ${{ secrets.DOCKER_HUB_USERNAME }}/startbootstrap-clean-blog:latest
+            docker stop blog || true
+            docker rm blog || true
+            docker run -d --name blog -p 8080:80 ${{ secrets.DOCKER_HUB_USERNAME }}/startbootstrap-clean-blog:latest
